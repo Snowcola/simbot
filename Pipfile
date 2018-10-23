@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+"discord.py" = {extras = ["voice"]}
+dotmap = "*"
+asyncio = "*"
+matplotlib = "*"
+pandas = "*"
+"boto3" = "*"
+
+[dev-packages]
+"flake8" = "*"
+yapf = "*"
+
+[requires]
+python_version = "3.6"
