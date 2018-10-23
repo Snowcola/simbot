@@ -10,10 +10,13 @@ asyncio = "*"
 matplotlib = "*"
 pandas = "*"
 "boto3" = "*"
+python-wowapi = "*"
+parse = "*"
 
 [dev-packages]
 "flake8" = "*"
 yapf = "*"
+ipykernel = "*"
 
 [requires]
 python_version = "3.6"

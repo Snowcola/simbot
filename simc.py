@@ -12,6 +12,8 @@ import pandas as pd
 from utils import colorscale, upload_to_aws
 import asyncio
 import datetime
+from wowapi import WowApi
+import parse
 
 char = "snowcolas"
 realm = "hyjal"
@@ -21,6 +23,16 @@ html = "john.html"
 armory = f'{region},{realm},{char}'
 
 data_loc = os.environ.get("DATA_LOC", default='char_data/')
+
+#init wow API client
+wow = WowApi(os.environ.get("BNET_CLIENT_ID"), os.environ.get("BNET_SECRET"))
+
+
+def get_item_name_from_simc_string(simc_string, region='us'):
+
+    item_id = parse.search('={:d},', simc_string)
+
+    return wow.get_item(region, item_id[0])
 
 
 class Colors:
@@ -56,6 +68,7 @@ class SimC:
             self,
             armory,
             item,
+            item_data=None,
             calculate_scale_factors=0,
             fname="results",
     ):
@@ -65,8 +78,12 @@ class SimC:
             f"calculate_scale_factors={calculate_scale_factors}",
             f"html={data_loc}{fname}.html", f"json2={data_loc}{fname}.json"
         ]
+        item_name = "New_item"
+        if item_data is not None:
+            item_name = item_data['name']
+
         if item is not None:
-            commands.append("copy=New_item")
+            commands.append(f"copy={item_name}")
             commands.append(item)
             #commands.append(option)
 
@@ -151,7 +168,8 @@ class SimC:
         plt.tight_layout()
         timestamp = datetime.datetime.now().strftime("%d%m%y%f")
         fname += timestamp
-        plt.savefig(f"{image_loc}{fname}.png", transparent=True)
+        plt.savefig(
+            f"{image_loc}{fname}.png", transparent=True, bbox_inches='tight')
 
         return f"{fname}.png", color
 
@@ -173,6 +191,14 @@ class SimC:
             maxx = int(player['collected_data']['dps']['max'])
             median = int(player['collected_data']['dps']['median'])
             player_class = player["specialization"].split()[-1]
+            level = int(player['level'])
+
+            ilvls = []
+            for item in player['gear']:
+                ilvls.append(int(player['gear'][item]['ilevel']))
+
+            ilvl = sum(ilvls) / len(ilvls)
+
             if player_class == "Hunter":
                 if player["specialization"].split()[-2] == "Demon":
                     player_class = "Demon"
@@ -180,11 +206,12 @@ class SimC:
                     player_class = "Hunter"
 
             series = pd.Series(
-                [mean, minn, maxx, median, player_class], name=name)
+                [mean, minn, maxx, median, player_class, ilvl, level],
+                name=name)
             s.append(series)
 
         df = pd.concat(s, axis=1).T
-        df.columns = ['mean', 'min', 'max', 'median', 'class']
+        df.columns = ['mean', 'min', 'max', 'median', 'class', 'ilvl', 'level']
         df['error'] = (df['max'] - df['min']) / 2
 
         return df
@@ -199,15 +226,27 @@ class SimC:
     ):  # charname-server
         _toon = toon.split('-')
 
+        item_data = None
+        if item is not None:
+            item_data = get_item_name_from_simc_string(item)
+
         msg = await self.bot.say("working...")
 
         armory = f"{region},{_toon[1]},{_toon[0]}"
-        simulation = self.run_sim(armory, item, fname=toon)
+        simulation = self.run_sim(armory, item, item_data, fname=toon)
         info = self.get_dps(toon)
         print(info)
         plot = self.save_plot(info, toon)
 
         report, png = upload_to_aws(toon, plot[0])
+
+        char_ilevel = []
+        for i, item in enumerate(info['ilvl']):
+            char_ilevel.append(
+                f"**{info.index[i]}**  iLevel: {item}, Level: {info['level'][i]}"
+            )
+
+        char_ilevel = "\n".join(char_ilevel)
 
         embed = discord.Embed(
             title=f"Your simcraft report for {toon}",
@@ -226,14 +265,18 @@ class SimC:
         embed.add_field(
             name="Full HTML Report", value=f"[{toon}]({report})", inline=False)
         embed.add_field(name="Simcraft Version", value="801-02", inline=False)
-        embed.add_field(name="Fight Length", value="300 seconds", inline=True)
-        embed.add_field(name="Fight Type", value="Patchwerk", inline=True)
+        embed.add_field(
+            name="Fight Length", value="300 seconds\n\n", inline=True)
+        embed.add_field(name="Fight Type", value="Patchwerk\n\n", inline=True)
+        embed.add_field(
+            name="Item Level", value=f"{info['ilvl'][0]}", inline=True)
+        embed.add_field(
+            name="Character Level", value=f"{info['level'][0]}", inline=True)
 
         await self.bot.edit_message(msg, new_content="Finished", embed=embed)
 
-        #TODO: return ilvl
-        #TODO: return character lvl
         #TODO: fix spacing between label on plot
+        #TODO: link to compared item on wowhead
 
 
 #main_hand=,id=163871,enchant_id=5963,bonus_id=5125/1532/4786,reforge=28
